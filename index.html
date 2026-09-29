@@ -15,7 +15,7 @@ body{background:var(--bg);color:var(--text);font-family:Segoe UI,Tahoma,sans-ser
 button,.btn{background:#444;color:#fff;border:0;padding:6px 8px;cursor:pointer;text-transform:uppercase;font-size:10px;font-weight:700;border-radius:4px}
 button:hover,.btn:hover{background:var(--accent);color:#111}
 #micBtn{background:#7f1d1d;color:#ffcdd2;border:1px solid #ef5350}
-#monBtn{background:#1b5e20;color:#c8e6c9;border:1px solid #66bb6a}
+#monBtn{background:#4a1515;color:#ffcdd2;border:1px solid #ef5350}
 .drop{border:2px dashed var(--accent);background:#1a1a1a;border-radius:6px;padding:12px;text-align:center;cursor:pointer;margin-bottom:8px}
 .drop.over{background:#2a2208}
 .status{background:#222;border-left:3px solid var(--accent);padding:6px 8px;margin-bottom:8px}
@@ -135,13 +135,13 @@ select{width:100%;margin-top:6px;background:#444;color:#fff;border:1px solid #55
 <script>
 const PRESETS={
   normal:{label:'Normal',icon:'🎵',pitch:0,bass:2,speed:1,type:'peaking',freq:1800,gain:3,hp:90,lp:11000},
-  darth_vader:{label:'Darth Vader',icon:'👹',pitch:-7,bass:16,speed:0.78,type:'lowpass',freq:420,gain:0,hp:70,lp:3600},
-  minion:{label:'Minion',icon:'🐹',pitch:12,bass:-2,speed:1.55,type:'highpass',freq:1850,gain:0,hp:1400,lp:16000},
-  radio_mc:{label:'Radio MC',icon:'📻',pitch:1,bass:6,speed:1.08,type:'peaking',freq:2400,gain:10,hp:320,lp:5800},
-  monster:{label:'Monster',icon:'👾',pitch:-10,bass:18,speed:0.62,type:'lowpass',freq:280,gain:0,hp:55,lp:2400},
-  podcast:{label:'Podcast',icon:'🎙️',pitch:0,bass:3,speed:1,type:'highpass',freq:140,gain:0,hp:140,lp:8500},
-  batman:{label:'Batman',icon:'🦇',pitch:-4,bass:12,speed:0.96,type:'lowpass',freq:520,gain:0,hp:80,lp:3400},
-  feminin:{label:'Feminin',icon:'👩',pitch:5,bass:1,speed:1.04,type:'peaking',freq:3000,gain:7,hp:160,lp:12500}
+  darth_vader:{label:'Darth Vader',icon:'👹',pitch:-8,bass:20,speed:0.72,type:'lowpass',freq:340,gain:0,hp:60,lp:2800},
+  minion:{label:'Minion',icon:'🐹',pitch:12,bass:-2,speed:1.58,type:'highpass',freq:1850,gain:0,hp:1400,lp:16000},
+  radio_mc:{label:'Radio MC',icon:'📻',pitch:2,bass:8,speed:1.12,type:'peaking',freq:2200,gain:14,hp:400,lp:5200},
+  monster:{label:'Monster',icon:'👾',pitch:-12,bass:22,speed:0.55,type:'lowpass',freq:240,gain:0,hp:45,lp:2000},
+  podcast:{label:'Podcast',icon:'🎙️',pitch:0,bass:4,speed:1,type:'highpass',freq:150,gain:0,hp:150,lp:8000},
+  batman:{label:'Batman',icon:'🦇',pitch:-6,bass:14,speed:0.88,type:'lowpass',freq:480,gain:0,hp:75,lp:3000},
+  feminin:{label:'Feminin',icon:'👩',pitch:6,bass:1,speed:1.06,type:'peaking',freq:3200,gain:9,hp:170,lp:13000}
 };
 const SK='realvocalchangerpluscuesave-session-v4';
 const S={volume:0.8,micGain:1,echo:0,reverb:0,flanger:0,speed:1,pitch:0,bass:2,padsThroughFx:true,micOn:false,monitor:false,preset:'normal',vstName:'',vstWet:0.35,vstOn:false,fem:{vol:0.75,pitch:6,pan:0,fx:0,mute:false,loop:false,name:''},cues:[]};
@@ -183,8 +183,11 @@ async function init(){
   media.connect(mastG);mastG.connect(mix);
   hp.connect(lp);lp.connect(comp);comp.connect(vfilt);vfilt.connect(bassN);bassN.connect(micAmp);micAmp.connect(micLine);
   micLine.connect(voiceOut);
+  micLine.connect(echoMix);echoHooked=true;
   echoMix.connect(del);del.connect(echoFb);echoFb.connect(del);del.connect(voiceOut);
+  micLine.connect(rev);revHooked=true;
   rev.connect(revG);revG.connect(voiceOut);
+  micLine.connect(flMix);flHooked=true;
   flMix.connect(flD);flD.connect(voiceOut);
   vstG.connect(voiceOut);
   femG.connect(femP);femP.connect(mix);femP.connect(femFx);femFx.connect(voiceBus);
@@ -210,15 +213,14 @@ function applyDSP(){
   mastG.gain.setTargetAtTime(S.volume,n,0.05);
   const needPitch=Math.abs(voiceRate()-1)>0.03;
   hookPitch(needPitch);
-  hookEcho(S.echo>0.02);hookRev(S.reverb>0.02);hookFl(S.flanger>0.08);
   hookVst(!!(S.micOn&&S.vstOn&&S.vstName));
-  echoMix.gain.setTargetAtTime(S.echo>0.01?S.echo*0.55:0,n,0.04);
-  echoFb.gain.setTargetAtTime(S.echo>0.01?S.echo*0.35:0,n,0.04);
-  revG.gain.setTargetAtTime(S.reverb>0.01?S.reverb*0.7:0,n,0.04);
-  flMix.gain.setTargetAtTime(S.flanger>0.05?0.28:0,n,0.04);
-  flDep.gain.setTargetAtTime(S.flanger>0.05?0.002:0,n,0.04);
+  if(echoMix) echoMix.gain.setValueAtTime(S.echo*0.75,n);
+  if(echoFb) echoFb.gain.setValueAtTime(S.echo*0.42,n);
+  if(revG) revG.gain.setValueAtTime(S.reverb*0.85,n);
+  if(flMix) flMix.gain.setValueAtTime(S.flanger>0?0.45:0,n);
+  if(flDep) flDep.gain.setValueAtTime(S.flanger>0?0.0035:0,n);
   if(flLfo)flLfo.frequency.setTargetAtTime(Math.max(0.08,S.flanger*0.35),n,0.08);
-  bassN.gain.setTargetAtTime(S.bass,n,0.08);
+  if(S.preset!=='minion') bassN.gain.setTargetAtTime(S.bass,n,0.08);
   if(micAmp) micAmp.gain.setTargetAtTime(2.4,n,0.05);
   if(phoneAmp) phoneAmp.gain.setTargetAtTime(S.micOn?2.3:1,n,0.05);
   if(monG) monG.gain.setTargetAtTime((S.micOn&&S.monitor)?Math.max(0.9,S.micGain*1.4):0,n,0.03);
@@ -229,11 +231,9 @@ function applyDSP(){
   saveS();
 }
 function applyPreset(id){
+  if(id==='textura'){S.preset='textura';startFemTexture();$('presetNow').textContent='Activ: TEXTURA (sample-ul tau)';document.querySelectorAll('#presetBtns button').forEach(b=>b.classList.toggle('on',b.dataset.id==='textura'));return}
   if(!PRESETS[id])id='normal';S.preset=id;const p=PRESETS[id];
-  S.pitch=p.pitch;S.bass=p.bass;S.speed=p.speed;S.echo=0;S.reverb=0;S.flanger=0;
-  if($('echo')){$('echo').value=0;$('echoV').textContent='0%'}
-  if($('reverb')){$('reverb').value=0;$('reverbV').textContent='0%'}
-  if($('flanger')){$('flanger').value=0;$('flangerV').textContent='0.0'}
+  S.pitch=p.pitch;S.bass=p.bass;S.speed=p.speed;
   $('pitch').value=p.pitch;$('bass').value=p.bass;$('speed').value=p.speed;
   $('pitchV').textContent=(p.pitch>0?'+':'')+p.pitch;$('bassV').textContent=p.bass+' dB';$('speedV').textContent=Number(p.speed).toFixed(2)+'x';
   if(ctx){const now=ctx.currentTime;vfilt.type=p.type;vfilt.frequency.setTargetAtTime(p.freq,now,0.08);
@@ -247,7 +247,12 @@ function applyPreset(id){
 }
 function drawWave(buf){const c=$('wave'),g=c.getContext('2d');c.width=c.offsetWidth;c.height=64;const data=buf.getChannelData(0),step=Math.ceil(data.length/c.width),amp=32;g.fillStyle='#000';g.fillRect(0,0,c.width,c.height);g.strokeStyle='#ff8c00';g.beginPath();for(let i=0;i<c.width;i++){let mn=1,mx=-1;for(let j=0;j<step;j++){const d=data[i*step+j]||0;if(d<mn)mn=d;if(d>mx)mx=d}g.moveTo(i,(1+mn)*amp);g.lineTo(i,(1+mx)*amp)}g.stroke();S.cues.forEach(t=>{const x=(t/buf.duration)*c.width;g.strokeStyle='#6c63ff';g.beginPath();g.moveTo(x,0);g.lineTo(x,64);g.stroke()})}
 async function loadMaster(file){await init();flash('Master: '+file.name);tag.src=URL.createObjectURL(file);tag.playbackRate=1;tag.load();$('fname').textContent=file.name;try{masterBuf=await ctx.decodeAudioData(await file.arrayBuffer());$('t1').textContent=fmt(masterBuf.duration);$('seek').max=masterBuf.duration;drawWave(masterBuf)}catch(e){masterBuf=null}flash('Master OK — doar volum')}
-async function loadFem(file){await init();femBuf=await ctx.decodeAudioData(await file.arrayBuffer());S.fem.name=file.name;renderFems();flash('FEM incarcata');saveS()}
+async function loadFem(file){await init();femBuf=await ctx.decodeAudioData(await file.arrayBuffer());S.fem.name=file.name;renderFems();renderVoiceBtns();flash('FEM/TEXTURA incarcata: '+file.name);saveS()}
+function renderVoiceBtns(){
+  const extra=femBuf?`<button type="button" data-id="textura" style="text-transform:none;background:#ad1457">🎤 TEXTURA ${S.fem.name?S.fem.name.slice(0,18):''}</button>`:'';
+  $('presetBtns').innerHTML=Object.entries(PRESETS).map(([k,v])=>`<button type="button" data-id="${k}" style="text-transform:none">${v.icon} ${v.label}</button>`).join('')+extra;
+  document.querySelectorAll('#presetBtns button').forEach(b=>b.onclick=()=>applyPreset(b.dataset.id));
+}
 async function addPads(list){await init();const arr=[...list].filter(f=>f.type.startsWith('audio/')||/\.(mp3|wav|ogg|flac|m4a)$/i.test(f.name));for(const f of arr){try{pads.push({name:f.name,buffer:await ctx.decodeAudioData(await f.arrayBuffer())})}catch(e){}}pads=pads.slice(0,12);renderPads();flash(pads.length+' pads')}
 function playPad(i){if(!ctx||!pads[i])return;const s=ctx.createBufferSource();s.buffer=pads[i].buffer;if(S.padsThroughFx)s.connect(voiceBus);else s.connect(padDry);s.start(0)}
 function stopFem(){try{femSrc&&femSrc.stop()}catch(e){}femSrc=null}
@@ -317,9 +322,11 @@ function renderPads(){if(!pads.length){$('padBox').innerHTML='<div class="muted"
 function playFrom(t){if(!tag)return;init().then(()=>{tag.currentTime=t;tag.play()})}
 function paintMicBtns(){
   $('micBtn').textContent=S.micOn?'● MIC ON':'○ MIC';
-  $('micBtn').style.background=S.micOn?'#c62828':'#7f1d1d';
+  $('micBtn').style.background=S.micOn?'#c62828':'#4a1515';
+  $('micBtn').style.color='#ffcdd2';
   $('monBtn').textContent=S.monitor?'● MONITOR ON':'○ MONITOR';
-  $('monBtn').style.background=S.monitor?'#2e7d32':'#1b5e20';
+  $('monBtn').style.background=S.monitor?'#c62828':'#4a1515';
+  $('monBtn').style.color='#ffcdd2';
 }
 async function toggleMic(){
   await init();
@@ -350,8 +357,8 @@ function bind(){
   $('echoV').textContent=Math.round(S.echo*100)+'%';$('reverbV').textContent=Math.round(S.reverb*100)+'%';$('flangerV').textContent=Number(S.flanger).toFixed(1);
   $('speedV').textContent=Number(S.speed).toFixed(2)+'x';$('pitchV').textContent=(S.pitch>0?'+':'')+S.pitch;$('bassV').textContent=S.bass+' dB';
   $('preset').innerHTML=Object.entries(PRESETS).map(([k,v])=>`<option value="${k}">${v.icon} ${v.label}</option>`).join('');
-  $('presetBtns').innerHTML=Object.entries(PRESETS).map(([k,v])=>`<button type="button" data-id="${k}" style="text-transform:none">${v.icon} ${v.label}</button>`).join('');
-  $('preset').onchange=e=>applyPreset(e.target.value);document.querySelectorAll('#presetBtns button').forEach(b=>b.onclick=()=>applyPreset(b.dataset.id));
+  renderVoiceBtns();
+  $('preset').onchange=e=>applyPreset(e.target.value);
   applyPreset(PRESETS[S.preset]?S.preset:'normal');
   $('echo').oninput=e=>{S.echo=+e.target.value;$('echoV').textContent=Math.round(S.echo*100)+'%';applyDSP()};
   $('reverb').oninput=e=>{S.reverb=+e.target.value;$('reverbV').textContent=Math.round(S.reverb*100)+'%';applyDSP()};
