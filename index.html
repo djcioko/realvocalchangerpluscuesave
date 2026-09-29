@@ -136,7 +136,7 @@ select{width:100%;margin-top:6px;background:#444;color:#fff;border:1px solid #55
 const PRESETS={
   normal:{label:'Normal',icon:'🎵',pitch:0,bass:2,speed:1,type:'peaking',freq:1800,gain:3,hp:90,lp:11000},
   darth_vader:{label:'Darth Vader',icon:'👹',pitch:-7,bass:16,speed:0.78,type:'lowpass',freq:420,gain:0,hp:70,lp:3600},
-  minion:{label:'Minion',icon:'🐹',pitch:10,bass:0,speed:1.38,type:'highpass',freq:1200,gain:0,hp:700,lp:14000},
+  minion:{label:'Minion',icon:'🐹',pitch:12,bass:-2,speed:1.55,type:'highpass',freq:1850,gain:0,hp:1400,lp:16000},
   radio_mc:{label:'Radio MC',icon:'📻',pitch:1,bass:6,speed:1.08,type:'peaking',freq:2400,gain:10,hp:320,lp:5800},
   monster:{label:'Monster',icon:'👾',pitch:-10,bass:18,speed:0.62,type:'lowpass',freq:280,gain:0,hp:55,lp:2400},
   podcast:{label:'Podcast',icon:'🎙️',pitch:0,bass:3,speed:1,type:'highpass',freq:140,gain:0,hp:140,lp:8500},
@@ -238,7 +238,10 @@ function applyPreset(id){
   $('pitchV').textContent=(p.pitch>0?'+':'')+p.pitch;$('bassV').textContent=p.bass+' dB';$('speedV').textContent=Number(p.speed).toFixed(2)+'x';
   if(ctx){const now=ctx.currentTime;vfilt.type=p.type;vfilt.frequency.setTargetAtTime(p.freq,now,0.08);
     if(p.type==='peaking'||p.type==='highshelf')vfilt.gain.setTargetAtTime(p.gain,now,0.08);else vfilt.gain.setTargetAtTime(0,now,0.08);
-    hp.frequency.setTargetAtTime(p.hp,now,0.08);lp.frequency.setTargetAtTime(p.lp,now,0.08)}
+    hp.frequency.setTargetAtTime(p.hp,now,0.08);lp.frequency.setTargetAtTime(p.lp,now,0.08);
+    if(id==='minion'){vfilt.type='highpass';vfilt.frequency.value=1850;vfilt.Q.value=0.9;hp.frequency.value=1400;lp.frequency.value=16000;bassN.type='highshelf';bassN.frequency.value=4200;bassN.gain.value=10;}
+    else{bassN.type='lowshelf';bassN.frequency.value=180;bassN.gain.value=p.bass;vfilt.Q.value=1;}
+  }
   $('preset').value=id;$('presetNow').textContent='Activ: '+p.icon+' '+p.label+' (pe MIC / FEM, nu pe master)';
   document.querySelectorAll('#presetBtns button').forEach(b=>b.classList.toggle('on',b.dataset.id===id));applyDSP();
 }
@@ -272,7 +275,43 @@ async function loadVst(file){
   }
   saveS();renderFaders();applyDSP();
 }
-function renderFems(){const ch=S.fem;$('femEditors').innerHTML=`<div class="panel"><div class="row" style="margin:0 0 4px"><b style="color:var(--fem)">FEM — o voce, edit fader / pitch</b><label class="btn">Load<input type="file" accept="audio/*" hidden onchange="this.files[0]&&loadFem(this.files[0])"></label></div><div class="muted">${ch.name||'niciun sample'}</div><div class="lab"><span>PITCH</span><span>${ch.pitch>0?'+':''}${ch.pitch}</span></div><input type="range" min="-12" max="12" step="1" value="${ch.pitch}" oninput="S.fem.pitch=+this.value;applyDSP();renderFems()"><div class="lab"><span>PAN</span><span>${Number(ch.pan).toFixed(2)}</span></div><input type="range" min="-1" max="1" step="0.05" value="${ch.pan}" oninput="S.fem.pan=+this.value;applyDSP();renderFems()"><div class="lab"><span>FX SEND</span><span>${Math.round(ch.fx*100)}%</span></div><input type="range" min="0" max="1" step="0.01" value="${ch.fx}" oninput="S.fem.fx=+this.value;applyDSP();renderFems()"><label class="muted" style="display:flex;gap:6px;margin-top:4px"><input type="checkbox" ${ch.loop?'checked':''} onchange="S.fem.loop=this.checked;saveS()"> LOOP</label></div>`}
+function renderFems(){const ch=S.fem;$('femEditors').innerHTML=`<div class="panel"><div class="row" style="margin:0 0 4px"><b style="color:var(--fem)">FEM — o voce, edit fader / pitch</b><label class="btn">Load<input type="file" accept="audio/*" hidden onchange="this.files[0]&&loadFem(this.files[0])"></label><button type="button" id="texBtn" style="background:#ad1457">MIC TEXTURA</button></div><div class="muted">${ch.name||'niciun sample'} · MIC TEXTURA = vocea ta conduce sample-ul FEM</div><div class="lab"><span>PITCH</span><span>${ch.pitch>0?'+':''}${ch.pitch}</span></div><input type="range" min="-12" max="12" step="1" value="${ch.pitch}" oninput="S.fem.pitch=+this.value;applyDSP();renderFems()"><div class="lab"><span>PAN</span><span>${Number(ch.pan).toFixed(2)}</span></div><input type="range" min="-1" max="1" step="0.05" value="${ch.pan}" oninput="S.fem.pan=+this.value;applyDSP();renderFems()"><div class="lab"><span>FX SEND</span><span>${Math.round(ch.fx*100)}%</span></div><input type="range" min="0" max="1" step="0.01" value="${ch.fx}" oninput="S.fem.fx=+this.value;applyDSP();renderFems()"><label class="muted" style="display:flex;gap:6px;margin-top:4px"><input type="checkbox" ${ch.loop?'checked':''} onchange="S.fem.loop=this.checked;saveS()"> LOOP</label></div>`;
+const tb=$('texBtn'); if(tb) tb.onclick=startFemTexture;
+}
+function startFemTexture(){
+  init().then(()=>{
+    if(!femBuf){flash('Incarca un sample FEM');return}
+    if(!S.micOn||!window._micGain){flash('Porneste MIC ON apoi MIC TEXTURA');return}
+    stopFem();
+    if(window._texNodes){window._texNodes.forEach(n=>{try{n.g.disconnect()}catch(e){}});window._texNodes=null}
+    const carrier=ctx.createBufferSource();
+    carrier.buffer=femBuf;carrier.loop=true;
+    carrier.playbackRate.value=Math.pow(2,S.fem.pitch/12)*S.speed;
+    const bands=[350,700,1400,2800,5600];
+    window._texNodes=[];
+    bands.forEach(f=>{
+      const bpC=ctx.createBiquadFilter();bpC.type='bandpass';bpC.frequency.value=f;bpC.Q.value=2.4;
+      const bpM=ctx.createBiquadFilter();bpM.type='bandpass';bpM.frequency.value=f;bpM.Q.value=2.4;
+      const fol=ctx.createAnalyser();fol.fftSize=256;
+      const g=ctx.createGain();g.gain.value=0;
+      carrier.connect(bpC);bpC.connect(g);g.connect(femG);
+      window._micGain.connect(bpM);bpM.connect(fol);
+      window._texNodes.push({fol,g});
+    });
+    carrier.start(0);femSrc=carrier;S.fem.loop=true;
+    const tick=()=>{
+      if(!window._texNodes||!femSrc)return;
+      window._texNodes.forEach(({fol,g})=>{
+        const d=new Uint8Array(fol.frequencyBinCount);fol.getByteFrequencyData(d);
+        let s=0;for(const v of d)s+=v;
+        g.gain.setTargetAtTime(Math.min(2.2,(s/d.length/40)),ctx.currentTime,0.04);
+      });
+      requestAnimationFrame(tick);
+    };
+    tick();
+    flash('MIC TEXTURA ON — vorbeste: sample-ul FEM urmeaza vocea ta');
+  });
+}
 function renderCues(){if(!S.cues.length){$('cueBox').innerHTML='<div class="muted" style="grid-column:1/-1;text-align:center">Detect Cues = pauze 200ms</div>';return}$('cueBox').innerHTML=S.cues.map((t,i)=>`<button type="button" style="border:1px solid var(--accent);background:#2a2a2a" onclick="playFrom(${t})">CUE ${i+1}<div class="muted">${fmt(t)}</div></button>`).join('')}
 function renderPads(){if(!pads.length){$('padBox').innerHTML='<div class="muted">Upload files / folder</div>';return}$('padBox').innerHTML=pads.map((p,i)=>`<button type="button" style="background:#141414;border:1px solid #356;min-height:56px" onclick="playPad(${i})"><div style="color:#7eb6ff">${i+1}</div><div class="muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</div></button>`).join('')}
 function playFrom(t){if(!tag)return;init().then(()=>{tag.currentTime=t;tag.play()})}
@@ -335,21 +374,33 @@ function bind(){
   $('ttsSpeak').onclick=speakText;
   $('ttsStop').onclick=()=>{if(window.speechSynthesis)speechSynthesis.cancel();if(window._ttsTag){window._ttsTag.pause();window._ttsTag.src='';}flash('TTS stop')};
 }
+function voiceMeta(v){
+  const n=(v.name||'')+' '+(v.lang||'');
+  const ro=/ro[-_]|romania|heidi|andrei|alina|irina/i.test(n);
+  const fem=/female|feme|woman|girl|heidi|zira|samantha|susan|hazel|aria|jenny|sonia|libby|alina|irina|natalia|ioana|maria|ana\b|eva|linda|karen|moira/i.test(n);
+  const mas=/male|barbat|david|mark|george|daniel|andrei|stefan|james|guy|ryan|eric|thomas/i.test(n);
+  return {ro, fem:fem&&!mas, mas:mas&&!fem};
+}
 function fillTtsVoices(){
   const sel=$('ttsVoice'); if(!sel) return;
   const keep=sel.value;
   const list=(window.speechSynthesis&&speechSynthesis.getVoices())||[];
-  const extra=[
-    {v:'browser',label:'Browser — voce selectată jos'},
-  ];
+  const tagged=list.map((v,i)=>({v,i,...voiceMeta(v)}));
+  tagged.sort((a,b)=>(b.ro-a.ro)||(b.fem-a.fem)||a.v.name.localeCompare(b.v.name));
   sel.innerHTML='';
-  const opt0=document.createElement('option'); opt0.value='__auto'; opt0.textContent='Auto (RO / EN)'; sel.appendChild(opt0);
-  list.forEach((v,i)=>{
+  const opt0=document.createElement('option'); opt0.value='__auto'; opt0.textContent='Auto — Română femeie (dacă există)'; sel.appendChild(opt0);
+  tagged.forEach(t=>{
+    const tag=(t.ro?'RO ':'')+(t.fem?'FEMEIE ':t.mas?'BARBAT ':'');
     const o=document.createElement('option');
-    o.value=String(i);
-    o.textContent=(v.lang||'')+' · '+v.name;
+    o.value=String(t.i);
+    o.textContent=(tag?('['+tag.trim()+'] '):'')+(t.v.lang||'')+' · '+t.v.name;
     sel.appendChild(o);
   });
+  if(!list.length){
+    const o=document.createElement('option'); o.disabled=true;
+    o.textContent='Instalează pachetul de limbă Română în Windows / Chrome';
+    sel.appendChild(o);
+  }
   if(keep) sel.value=keep;
 }
 async function speakText(){
@@ -384,7 +435,8 @@ async function speakText(){
   const list=speechSynthesis.getVoices()||[];
   const idx=$('ttsVoice').value;
   if(idx==='__auto'){
-    u.voice=list.find(v=>/ro[-_]/i.test(v.lang))||list.find(v=>/en[-_].*female|female/i.test(v.name+' '+v.lang))||list[0]||null;
+    const tagged=list.map(v=>({v,...voiceMeta(v)}));
+    u.voice=(tagged.find(t=>t.ro&&t.fem)||tagged.find(t=>t.ro)||tagged.find(t=>t.fem)||tagged[0]||{}).v||null;
   } else if(list[+idx]) u.voice=list[+idx];
   u.rate=Math.max(0.6,Math.min(1.4,S.speed));
   u.pitch=Math.max(0.1,Math.min(2,1+S.pitch/12));
