@@ -173,7 +173,8 @@ async function init(){
   micAmp=ctx.createGain();micAmp.gain.value=2.4;
   phoneAmp=ctx.createGain();phoneAmp.gain.value=2.2;
   voiceBus=ctx.createGain();voiceOut=ctx.createGain();
-  rev=ctx.createConvolver();rev.buffer=impulse(ctx,1.6,2.2);revG=ctx.createGain();revG.gain.value=0;
+  rev=ctx.createConvolver();rev.buffer=impulse(ctx,3.0,2.0);revG=ctx.createGain();revG.gain.value=0;
+  dryG=ctx.createGain();dryG.gain.value=1;
   del=ctx.createDelay(2.0);del.delayTime.value=0.28;echoFb=ctx.createGain();echoFb.gain.value=0;echoMix=ctx.createGain();echoMix.gain.value=0;
   flD=ctx.createDelay(0.03);flD.delayTime.value=0.004;flDep=ctx.createGain();flDep.gain.value=0;flMix=ctx.createGain();flMix.gain.value=0;
   flLfo=ctx.createOscillator();flLfo.frequency.value=0.2;flLfo.connect(flDep);flDep.connect(flD.delayTime);flLfo.start();
@@ -181,17 +182,14 @@ async function init(){
   monG=ctx.createGain();monG.gain.value=0;
   vstG=ctx.createGain();vstG.gain.value=0;
   media.connect(mastG);mastG.connect(mix);
-  hp.connect(lp);lp.connect(comp);comp.connect(vfilt);vfilt.connect(bassN);bassN.connect(micAmp);micAmp.connect(micLine);
-  micLine.connect(voiceOut);
-  micLine.connect(echoMix);echoHooked=true;
-  echoMix.connect(del);del.connect(echoFb);echoFb.connect(del);del.connect(voiceOut);
-  micLine.connect(rev);revHooked=true;
-  rev.connect(revG);revG.connect(voiceOut);
-  micLine.connect(flMix);flHooked=true;
-  flMix.connect(flD);flD.connect(voiceOut);
-  vstG.connect(voiceOut);
-  femG.connect(femP);femP.connect(mix);femP.connect(echoMix);femP.connect(rev);femP.connect(femFx);femFx.connect(voiceBus);
-  voiceBus.connect(voiceOut);
+  hp.connect(lp);lp.connect(comp);comp.connect(vfilt);
+  vfilt.connect(dryG);dryG.connect(bassN);
+  vfilt.connect(rev);rev.connect(revG);revG.connect(bassN);
+  rev.connect(vstG);vstG.connect(bassN);
+  bassN.connect(micAmp);micAmp.connect(voiceOut);
+  bassN.connect(echoMix);echoMix.connect(del);del.connect(echoFb);echoFb.connect(del);del.connect(voiceOut);
+  bassN.connect(flMix);flMix.connect(flD);flD.connect(voiceOut);
+  femG.connect(femP);femP.connect(mix);femP.connect(bassN);
   padDry.connect(mix);voiceOut.connect(phoneAmp);phoneAmp.connect(mix);monG.connect(mix);mix.connect(an);an.connect(ctx.destination);
   tag.onplay=()=>{$('playBtn').textContent='Pause'};tag.onpause=()=>{$('playBtn').textContent='Play'};
   tag.ontimeupdate=()=>{$('t0').textContent=fmt(tag.currentTime);$('seek').value=tag.currentTime};
@@ -213,7 +211,8 @@ function applyDSP(){
   mastG.gain.setTargetAtTime(S.volume,n,0.05);
   const needPitch=Math.abs(voiceRate()-1)>0.03;
   hookPitch(needPitch);
-  hookVst(!!(S.micOn&&S.vstOn&&S.vstName));
+  if(vstG) vstG.gain.setTargetAtTime((S.vstOn&&S.vstName)?S.vstWet:0,n,0.1);
+  if(typeof dryG!=='undefined'&&dryG) dryG.gain.setTargetAtTime((S.vstOn&&S.vstName)?(1-S.vstWet):1,n,0.1);
   if(echoMix) echoMix.gain.setValueAtTime(S.echo*0.8,n);
   if(echoFb) echoFb.gain.setValueAtTime(S.echo*0.6,n);
   if(revG) revG.gain.setValueAtTime(S.reverb*1.5,n);
@@ -335,7 +334,7 @@ async function toggleMic(){
     S.micOn=false;S.monitor=false;applyDSP();paintMicBtns();flash('Mic OFF');return;
   }
   try{
-    micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:true,autoGainControl:false,channelCount:1}});
+    micStream=await navigator.mediaDevices.getUserMedia({audio:true});
     micSrc=ctx.createMediaStreamSource(micStream);
     window._micGain=ctx.createGain();window._micGain.gain.value=S.micGain;
     micSrc.connect(window._micGain);
