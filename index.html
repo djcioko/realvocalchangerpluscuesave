@@ -72,6 +72,7 @@ select{width:100%;margin-top:6px;background:#444;color:#fff;border:1px solid #55
     <span class="muted" id="fname">no master</span>
   </div>
   <div class="grid g4" id="faders"></div>
+  <div id="vstUi"></div>
   <div class="grid g2" id="femEditors"></div>
   <div class="panel" style="margin-bottom:10px">
     <div class="row" style="margin-bottom:6px"><b style="color:#80cbc4">TEXT → VOCE</b><span class="muted">voci din browser · Fish Audio dacă ai cheie</span></div>
@@ -144,7 +145,7 @@ const PRESETS={
   feminin:{label:'Feminin',icon:'👩',pitch:6,bass:1,speed:1.06,type:'peaking',freq:3200,gain:9,hp:170,lp:13000}
 };
 const SK='realvocalchangerpluscuesave-session-v4';
-const S={volume:0.8,micGain:1,echo:0,reverb:0,flanger:0,speed:1,pitch:0,bass:2,padsThroughFx:true,micOn:false,monitor:false,preset:'normal',vstName:'',vstWet:0.35,vstOn:false,fem:{vol:0.75,pitch:6,pan:0,fx:0,mute:false,loop:false,name:''},cues:[]};
+const S={volume:0.8,micGain:1,echo:0,reverb:0,flanger:0,speed:1,pitch:0,bass:2,padsThroughFx:true,micOn:false,monitor:false,preset:'normal',vstName:'',vstWet:0.35,vstOn:false,vstShow:false,vstDrive:0.2,vstTone:2000,vstOut:0.8,fem:{vol:0.75,pitch:6,pan:0,fx:0,mute:false,loop:false,name:''},cues:[]};
 let ctx,tag,media,micSrc,micStream,an,hp,lp,comp,pitchNode,vfilt,bassN,voiceBus,voiceOut,rev,revG,del,echoFb,echoMix,flD,flLfo,flDep,flMix,mastG,padDry,mix,femG,femP,femFx,femBuf,femSrc,masterBuf,pads=[],workletReady=false,echoHooked=false,revHooked=false,flHooked=false,pitchHooked=false,monG=null,vstG=null;
 function $(id){return document.getElementById(id)}
 function flash(m){$('status').textContent=m}
@@ -181,11 +182,12 @@ async function init(){
   femG=ctx.createGain();femP=ctx.createStereoPanner();femFx=ctx.createGain();
   monG=ctx.createGain();monG.gain.value=0;
   vstG=ctx.createGain();vstG.gain.value=0;
+  vstTone=ctx.createBiquadFilter();vstTone.type='lowpass';vstTone.frequency.value=S.vstTone||2000;vstTone.Q.value=0.7;
   media.connect(mastG);mastG.connect(mix);
   hp.connect(lp);lp.connect(comp);comp.connect(vfilt);
   vfilt.connect(dryG);dryG.connect(bassN);
   vfilt.connect(rev);rev.connect(revG);revG.connect(bassN);
-  rev.connect(vstG);vstG.connect(bassN);
+  rev.connect(vstG);vstG.connect(vstTone);vstTone.connect(bassN);
   bassN.connect(micAmp);micAmp.connect(voiceOut);
   bassN.connect(echoMix);echoMix.connect(del);del.connect(echoFb);echoFb.connect(del);del.connect(voiceOut);
   bassN.connect(flMix);flMix.connect(flD);flD.connect(voiceOut);
@@ -223,7 +225,8 @@ function applyDSP(){
   if(micAmp) micAmp.gain.setTargetAtTime(2.4,n,0.05);
   if(phoneAmp) phoneAmp.gain.setTargetAtTime(S.micOn?2.3:1,n,0.05);
   if(monG) monG.gain.setTargetAtTime((S.micOn&&S.monitor)?Math.max(0.9,S.micGain*1.4):0,n,0.03);
-  if(vstG) vstG.gain.setTargetAtTime((S.micOn&&S.vstOn&&S.vstName)?S.vstWet*0.7:0,n,0.08);
+  if(vstTone) vstTone.frequency.setTargetAtTime(S.vstTone||2000,n,0.08);
+  if(vstG) vstG.gain.setTargetAtTime((S.vstOn&&S.vstName)?S.vstWet*(0.4+S.vstOut)* (1+S.vstDrive):0,n,0.1);
   femG.gain.setTargetAtTime(S.fem.mute?0:S.fem.vol,n,0.06);femP.pan.setTargetAtTime(S.fem.pan,n,0.06);femFx.gain.setTargetAtTime(S.fem.fx,n,0.06);
   if(pitchNode&&pitchNode.port)pitchNode.port.postMessage(needPitch?voiceRate():1);
   if(femSrc)femSrc.playbackRate.setTargetAtTime(Math.pow(2,S.fem.pitch/12)*S.speed,n,0.06);
@@ -258,24 +261,44 @@ function detectCues(){if(!masterBuf){flash('Incarca master');return}const data=m
 function saveCue(){if(!S.cues.length){flash('Detecteaza CUE');return}let c='FILE "'+($('fname').textContent||'track.mp3')+'" MP3\\n';S.cues.forEach((t,i)=>{c+='  TRACK '+String(i+1).padStart(2,'0')+' AUDIO\\n    TITLE "CUE '+(i+1)+'"\\n    INDEX 01 '+cueFmt(t)+'\\n'});const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/plain'}));a.download='tracklist.cue';a.click();flash('CUE salvat')}
 async function exportZip(){if(!masterBuf||!S.cues.length){flash('CUE + master necesar');return}const zip=new JSZip();for(let i=0;i<S.cues.length;i++){const start=S.cues[i],end=S.cues[i+1]||masterBuf.duration;const a0=Math.floor(start*masterBuf.sampleRate),a1=Math.min(masterBuf.length,Math.floor(end*masterBuf.sampleRate)),len=Math.max(1,a1-a0);const seg=ctx.createBuffer(masterBuf.numberOfChannels,len,masterBuf.sampleRate);for(let ch=0;ch<masterBuf.numberOfChannels;ch++){const src=masterBuf.getChannelData(ch),dst=seg.getChannelData(ch);for(let s=0;s<len;s++)dst[s]=src[a0+s]||0}zip.file('track_'+String(i+1).padStart(2,'0')+'.wav',new Blob([audioBufferToWav(seg)],{type:'audio/wav'}))}const blob=await zip.generateAsync({type:'blob'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='aimp_tracks.zip';a.click();flash('ZIP gata')}
 function audioBufferToWav(buf){const length=buf.length*buf.numberOfChannels*2,wav=new ArrayBuffer(44+length),v=new DataView(wav);const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};ws(0,'RIFF');v.setUint32(4,36+length,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,buf.numberOfChannels,true);v.setUint32(24,buf.sampleRate,true);v.setUint32(28,buf.sampleRate*buf.numberOfChannels*2,true);v.setUint16(32,buf.numberOfChannels*2,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,length,true);const chs=[];for(let i=0;i<buf.numberOfChannels;i++)chs.push(buf.getChannelData(i));let o=44;for(let i=0;i<buf.length;i++)for(let c=0;c<buf.numberOfChannels;c++){const s=Math.max(-1,Math.min(1,chs[c][i]));v.setInt16(o,s<0?s*0x8000:s*0x7fff,true);o+=2}return wav}
-function renderFaders(){$('faders').innerHTML=`<div class="panel fcol"><div style="color:var(--accent);font-weight:800">MASTER</div><input class="fader" id="volF" type="range" min="0" max="1" step="0.01" value="${S.volume}"><div id="volT">${Math.round(S.volume*100)}%</div><div class="muted">doar volum</div></div><div class="panel fcol"><div style="color:#ef9a9a;font-weight:800">MIC</div><input class="fader" id="micF" type="range" min="0" max="2" step="0.01" value="${S.micGain}"><div id="micT">${Math.round(S.micGain*100)}%</div></div><div class="panel fcol"><div style="color:var(--fem);font-weight:800">FEM</div><input class="fader" id="femF" type="range" min="0" max="1" step="0.01" value="${S.fem.vol}"><div>${Math.round(S.fem.vol*100)}%</div><button type="button" id="femM">${S.fem.mute?'MUTED':'ON'}</button><button type="button" id="femP">▶</button><button type="button" id="femS">■</button></div><div class="panel fcol"><div style="color:#90caf9;font-weight:800">FX / VST</div><label class="btn" style="background:#1565c0">UPLOAD VST<input id="vstIn" type="file" accept=".dll,.vst,.vst3,.wav,.mp3" hidden></label><div class="muted" style="text-align:center;max-width:110px">${S.vstName||'niciun plugin'}</div><button type="button" id="vstOnBtn">${S.vstOn?'VST ON':'VST OFF'}</button><div class="lab" style="width:100%"><span>WET</span><span>${Math.round(S.vstWet*100)}%</span></div><input type="range" id="vstWet" min="0" max="1" step="0.01" value="${S.vstWet}"></div>`;
+function renderFaders(){$('faders').innerHTML=`<div class="panel fcol"><div style="color:var(--accent);font-weight:800">MASTER</div><input class="fader" id="volF" type="range" min="0" max="1" step="0.01" value="${S.volume}"><div id="volT">${Math.round(S.volume*100)}%</div><div class="muted">doar volum</div></div><div class="panel fcol"><div style="color:#ef9a9a;font-weight:800">MIC</div><input class="fader" id="micF" type="range" min="0" max="2" step="0.01" value="${S.micGain}"><div id="micT">${Math.round(S.micGain*100)}%</div></div><div class="panel fcol"><div style="color:var(--fem);font-weight:800">FEM</div><input class="fader" id="femF" type="range" min="0" max="1" step="0.01" value="${S.fem.vol}"><div>${Math.round(S.fem.vol*100)}%</div><button type="button" id="femM">${S.fem.mute?'MUTED':'ON'}</button><button type="button" id="femP">▶</button><button type="button" id="femS">■</button></div><div class="panel fcol"><div style="color:#90caf9;font-weight:800">FX / VST</div><label class="btn" style="background:#1565c0">UPLOAD VST<input id="vstIn" type="file" accept=".dll,.vst,.vst3,.wav,.mp3" hidden></label><div class="muted" style="text-align:center;max-width:110px">${S.vstName||'niciun plugin'}</div><button type="button" id="vstOnBtn">${S.vstOn?'VST ON':'VST OFF'}</button><button type="button" id="vstShowBtn" style="background:#37474f">SHOW</button><div class="lab" style="width:100%"><span>WET</span><span>${Math.round(S.vstWet*100)}%</span></div><input type="range" id="vstWet" min="0" max="1" step="0.01" value="${S.vstWet}"></div>`;
 $('volF').oninput=e=>{S.volume=+e.target.value;$('volT').textContent=Math.round(S.volume*100)+'%';applyDSP()};
 $('micF').oninput=e=>{S.micGain=+e.target.value;$('micT').textContent=Math.round(S.micGain*100)+'%';if(window._micGain)window._micGain.gain.value=S.micGain;applyDSP()};
 $('femF').oninput=e=>{S.fem.vol=+e.target.value;applyDSP();renderFems()};
 $('femM').onclick=()=>{S.fem.mute=!S.fem.mute;applyDSP();renderFaders()};$('femP').onclick=playFem;$('femS').onclick=stopFem;
 $('vstIn').onchange=e=>e.target.files[0]&&loadVst(e.target.files[0]);
-$('vstOnBtn').onclick=()=>{if(!S.vstName){flash('Incarca un VST / IR');return}S.vstOn=!S.vstOn;applyDSP();renderFaders()};
-$('vstWet').oninput=e=>{S.vstWet=+e.target.value;applyDSP();renderFaders()}}
+$('vstOnBtn').onclick=()=>{if(!S.vstName){flash('Incarca un VST / IR');return}S.vstOn=!S.vstOn;applyDSP();renderFaders();renderVstUi()};
+$('vstShowBtn').onclick=()=>{if(!S.vstName){flash('Incarca un VST mai intai');return}S.vstShow=!S.vstShow;renderVstUi()};
+$('vstWet').oninput=e=>{S.vstWet=+e.target.value;applyDSP();renderFaders();renderVstUi()}}
+function renderVstUi(){
+  const box=$('vstUi'); if(!box) return;
+  if(!S.vstShow||!S.vstName){box.innerHTML='';return}
+  box.innerHTML=`<div class="panel" style="margin-bottom:10px;border:1px solid #90caf9">
+    <div class="row" style="margin:0 0 8px"><b style="color:#90caf9">VST — ${S.vstName}</b><span class="muted">interfata bridge · se aude pe MIC</span><button type="button" id="vstHide">HIDE</button></div>
+    <div class="grid g4">
+      <div><div class="lab"><span>MIX</span><span>${Math.round(S.vstWet*100)}%</span></div><input id="uiMix" type="range" min="0" max="1" step="0.01" value="${S.vstWet}"></div>
+      <div><div class="lab"><span>DRIVE</span><span>${Math.round(S.vstDrive*100)}%</span></div><input id="uiDrv" type="range" min="0" max="1" step="0.01" value="${S.vstDrive}"></div>
+      <div><div class="lab"><span>TONE</span><span>${Math.round(S.vstTone)} Hz</span></div><input id="uiTone" type="range" min="400" max="12000" step="50" value="${S.vstTone}"></div>
+      <div><div class="lab"><span>OUTPUT</span><span>${Math.round(S.vstOut*100)}%</span></div><input id="uiOut" type="range" min="0" max="1.5" step="0.01" value="${S.vstOut}"></div>
+    </div>
+    <div class="muted">DLL-ul nu se deschide nativ in browser. Parametrii de aici schimba mix / drive / tone / output pe microfon.</div>
+  </div>`;
+  $('vstHide').onclick=()=>{S.vstShow=false;renderVstUi()};
+  $('uiMix').oninput=e=>{S.vstWet=+e.target.value;applyDSP();renderVstUi()};
+  $('uiDrv').oninput=e=>{S.vstDrive=+e.target.value;applyDSP();renderVstUi()};
+  $('uiTone').oninput=e=>{S.vstTone=+e.target.value;applyDSP();renderVstUi()};
+  $('uiOut').oninput=e=>{S.vstOut=+e.target.value;applyDSP();renderVstUi()};
+}
 async function loadVst(file){
   await init();
-  S.vstName=file.name;S.vstOn=true;
+  S.vstName=file.name;S.vstOn=true;S.vstShow=true;
   if(/\.(wav|mp3|ogg)$/i.test(file.name)){
     try{const buf=await ctx.decodeAudioData(await file.arrayBuffer());rev.buffer=buf;flash('VST IR incarcat: '+file.name+' (impulse pe voce)')}
     catch(e){flash('Nu pot citi IR')}
   } else {
     flash('VST incarcat: '+file.name+' — in browser nu ruleaza DLL nativ, e bridge wet/dry pe voce');
   }
-  saveS();renderFaders();applyDSP();
+  saveS();renderFaders();renderVstUi();applyDSP();
 }
 function renderFems(){const ch=S.fem;$('femEditors').innerHTML=`<div class="panel"><div class="row" style="margin:0 0 4px"><b style="color:var(--fem)">FEM — o voce, edit fader / pitch</b><label class="btn">Load<input type="file" accept="audio/*" hidden onchange="this.files[0]&&loadFem(this.files[0])"></label></div><div class="muted">${ch.name||'niciun sample'}</div><div class="lab"><span>PITCH</span><span>${ch.pitch>0?'+':''}${ch.pitch}</span></div><input type="range" min="-24" max="24" step="1" value="${ch.pitch}" oninput="S.fem.pitch=+this.value;applyDSP();renderFems()"><div class="lab"><span>PAN</span><span>${Number(ch.pan).toFixed(2)}</span></div><input type="range" min="-1" max="1" step="0.05" value="${ch.pan}" oninput="S.fem.pan=+this.value;applyDSP();renderFems()"><div class="lab"><span>FX SEND</span><span>${Math.round(ch.fx*100)}%</span></div><input type="range" min="0" max="1" step="0.01" value="${ch.fx}" oninput="S.fem.fx=+this.value;applyDSP();renderFems()"><label class="muted" style="display:flex;gap:6px;margin-top:4px"><input type="checkbox" ${ch.loop?'checked':''} onchange="S.fem.loop=this.checked;if(femSrc)femSrc.loop=this.checked;saveS()"> LOOP (doar daca e bifat)</label></div>`;
 }
@@ -372,7 +395,7 @@ function bind(){
   $('padFiles').onchange=e=>addPads(e.target.files);$('padFolder').onchange=e=>addPads(e.target.files);
   $('padFx').onclick=()=>{S.padsThroughFx=!S.padsThroughFx;$('padFx').textContent=S.padsThroughFx?'PADS → FX':'PADS DRY';saveS()};
   window.onkeydown=e=>{const t=(e.target.tagName||'');if(t==='INPUT'||t==='SELECT')return;if(e.code==='Space'){e.preventDefault();$('playBtn').click()}const n=parseInt(e.key,10);if(n>=1&&n<=9){if(e.shiftKey&&S.cues[n-1]!=null)playFrom(S.cues[n-1]);else if(pads[n-1])playPad(n-1)}};
-  renderFaders();renderFems();renderCues();renderPads();
+  renderFaders();renderVstUi();renderFems();renderCues();renderPads();
   fillTtsVoices();
   if(window.speechSynthesis) window.speechSynthesis.onvoiceschanged=fillTtsVoices;
   $('ttsSpeak').onclick=speakText;
